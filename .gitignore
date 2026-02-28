@@ -1,0 +1,82 @@
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+pip-wheel-metadata/
+
+# =========================
+# Virtual environments
+# =========================
+.venv/
+venv/
+env/
+ENV/
+
+# =========================
+# Environment variables
+# =========================
+.env
+.env.*
+!.env.example
+
+# =========================
+# Pytest / Coverage
+# =========================
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# =========================
+# Jupyter
+# =========================
+.ipynb_checkpoints/
+
+# =========================
+# VS Code / IDE
+# =========================
+.vscode/
+.idea/
+
+# =========================
+# macOS
+# =========================
+.DS_Store
+
+# =========================
+# Data & Cache (CRITICAL)
+# =========================
+data/cache/
+data/**/*.parquet
+data/**/*.csv
+
+# If you later store features/signals separately
+data/features/
+data/signals/
+data/backtests/
+
+# =========================
+# Logs
+# =========================
+logs/
+*.log
+
+# =========================
+# Mypy / Ruff / Lint caches
+# =========================
+.mypy_cache/
+.ruff_cache/
+.cache/
+
+# =========================
+# Temporary files
+# =========================
+*.tmp
+*.bak
+*.swp

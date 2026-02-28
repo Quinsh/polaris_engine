@@ -1,0 +1,35 @@
+# pyproject.toml
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stockfilter"
+version = "0.1.0"
+description = "Minimal prototype: pykrx OHLCV fetch + cache + CLI"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "pandas>=2.1",
+  "pyarrow>=14.0",
+  "pykrx>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+]
+
+[project.scripts]
+stockfilter = "stock_filter.cli.main:main"
+stockfilter-app = "stock_filter.app.interactive:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+stock_filter = ["universe/static/*.csv"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
