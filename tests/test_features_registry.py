@@ -25,3 +25,27 @@ def test_feature_registry_computes_expected_columns() -> None:
     assert out["volume_sma_20"].iloc[:19].isna().all()
     # Last day SMA: (19 * 100 + 300) / 20 = 110
     assert out["volume_sma_20"].iloc[-1] == 110.0
+
+
+def test_price_above_sma_200_feature() -> None:
+    dates = pd.date_range("2023-01-01", periods=205, freq="D")
+    close = [100.0] * 204 + [120.0]
+    df = pd.DataFrame(
+        {
+            "ticker": ["005930"] * 205,
+            "date": dates,
+            "open": close,
+            "high": close,
+            "low": close,
+            "close": close,
+            "volume": [1000] * 205,
+        }
+    )
+
+    out = compute_features(df, ["price_above_sma_200"])
+
+    assert "price_above_sma_200" in out.columns
+    # first 199 rows do not have SMA(200), comparison should be False -> 0.0
+    assert (out["price_above_sma_200"].iloc[:199] == 0.0).all()
+    # final close=120 > SMA(200)~100.1, so feature should be 1.0
+    assert out["price_above_sma_200"].iloc[-1] == 1.0

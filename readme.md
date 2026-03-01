@@ -50,9 +50,9 @@ stockfilter screen --markets kospi,kosdaq --freq d --out data/cache --limit 20
 ```
 
 Behavior:
-- Computes requested features.
-- Runs requested signal detectors.
-- Applies configurable screening rules.
+- Computes requested features (`returns_1d`, `volume_sma_20`, `price_above_sma_200`).
+- Runs requested signal detectors (`unusual_volume_simple`).
+- Applies configurable screening rules (currently includes `price_above_sma_200 >= 1`).
 - Prints ranked pass list by signal score (descending).
 - Missing ticker series are skipped with warnings.
 
@@ -84,3 +84,14 @@ def my_signal(df):
 
 2. Return `Signal` or `None`.
 3. Reference it in pipeline config (`signals`) and screener rules (`signal_rules`).
+
+
+### Interactive app
+
+Run the menu UI:
+
+```bash
+stockfilter-app
+```
+
+The interactive menu includes a **Screen cached series** option that supports single ticker or static-market screening.

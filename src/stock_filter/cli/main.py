@@ -302,10 +302,10 @@ def cmd_screen(args: argparse.Namespace) -> int:
         return 0
 
     config = {
-        "features": ["returns_1d", "volume_sma_20"],
+        "features": ["returns_1d", "volume_sma_20", "price_above_sma_200"],
         "signals": ["unusual_volume_simple"],
         "rules": {
-            "feature_rules": [],
+            "feature_rules": [{"name": "price_above_sma_200", "op": ">=", "value": 1}],
             "signal_rules": [{"name": "unusual_volume_simple", "min_score": 2.0}],
         },
     }

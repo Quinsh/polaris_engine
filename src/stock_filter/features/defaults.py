@@ -17,3 +17,12 @@ def volume_sma_20(df: pd.DataFrame) -> pd.Series:
     if "volume" not in df.columns:
         raise ValueError("volume_sma_20 requires 'volume' column")
     return df["volume"].rolling(window=20, min_periods=20).mean()
+
+
+@register_feature("price_above_sma_200")
+def price_above_sma_200(df: pd.DataFrame) -> pd.Series:
+    if "close" not in df.columns:
+        raise ValueError("price_above_sma_200 requires 'close' column")
+
+    sma_200 = df["close"].rolling(window=200, min_periods=200).mean()
+    return (df["close"] > sma_200).astype(float)

@@ -36,3 +36,31 @@ def test_screener_pass_and_fail_with_unusual_volume_signal() -> None:
     assert pass_result.passed is True
     assert fail_result.passed is False
     assert any(r.startswith("signal_rule_failed:unusual_volume_simple") for r in fail_result.reasons)
+
+
+def test_screener_feature_rule_for_price_above_sma_200() -> None:
+    dates = pd.date_range("2023-01-01", periods=205, freq="D")
+    close = [100.0] * 204 + [120.0]
+    df = pd.DataFrame(
+        {
+            "ticker": ["005930"] * 205,
+            "date": dates,
+            "open": close,
+            "high": close,
+            "low": close,
+            "close": close,
+            "volume": [1000] * 205,
+        }
+    )
+
+    enriched = compute_features(df, ["price_above_sma_200"])
+
+    pass_rules = {"feature_rules": [{"name": "price_above_sma_200", "op": ">=", "value": 1}], "signal_rules": []}
+    fail_rules = {"feature_rules": [{"name": "price_above_sma_200", "op": "==", "value": 0}], "signal_rules": []}
+
+    pass_result = Screener(pass_rules).evaluate(enriched, [])
+    fail_result = Screener(fail_rules).evaluate(enriched, [])
+
+    assert pass_result.passed is True
+    assert fail_result.passed is False
+    assert any(r.startswith("feature_rule_failed:price_above_sma_200") for r in fail_result.reasons)
