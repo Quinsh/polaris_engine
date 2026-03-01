@@ -5,6 +5,7 @@ import sys
 import time
 from pathlib import Path
 
+from stock_filter.analytics.pipeline import run_screen_pipeline
 from stock_filter.core.utils import (
     normalize_universe_name,
     validate_yyyymmdd,
@@ -74,6 +75,13 @@ def _build_parser() -> argparse.ArgumentParser:
     p_update.add_argument("--sleep", required=False, type=float, default=0.25)
     p_update.add_argument("--max-retries", required=False, type=int, default=3)
     p_update.add_argument("--limit", required=False, type=int, default=None, help="limit number of tickers (smoke test)")
+
+    p_screen = sub.add_parser("screen", help="Run feature/signal-based screening using cached OHLCV series")
+    p_screen.add_argument("--markets", required=False, default="kospi,kosdaq", help="Uses static kospi100/kosdaq100 CSVs. Choose: kospi, kosdaq, kospi,kosdaq")
+    p_screen.add_argument("--ticker", required=False, default=None, help="Single ticker mode (e.g. 005930)")
+    p_screen.add_argument("--freq", required=False, default="d", choices=["d", "m", "y"], help="d|m|y")
+    p_screen.add_argument("--out", required=True, help="Root cache directory where ohlcv_series lives")
+    p_screen.add_argument("--limit", required=False, type=int, default=None, help="limit number of tickers (smoke test)")
 
     return p
 
@@ -280,6 +288,66 @@ def cmd_update(args: argparse.Namespace) -> int:
     return 0 if stats.failed == 0 else 2
 
 
+def cmd_screen(args: argparse.Namespace) -> int:
+    if args.ticker:
+        tickers = [str(args.ticker).strip()]
+    else:
+        tickers = _load_static_100_tickers(args.markets)
+
+    if args.limit is not None:
+        tickers = tickers[: int(args.limit)]
+
+    if not tickers:
+        print("No tickers to screen.")
+        return 0
+
+    config = {
+        "features": ["returns_1d", "volume_sma_20"],
+        "signals": ["unusual_volume_simple"],
+        "rules": {
+            "feature_rules": [],
+            "signal_rules": [{"name": "unusual_volume_simple", "min_score": 2.0}],
+        },
+    }
+
+    results = []
+    skipped = 0
+    for ticker in tickers:
+        try:
+            result = run_screen_pipeline(
+                ticker=ticker,
+                freq=args.freq,
+                root_dir=Path(args.out),
+                config=config,
+            )
+            results.append(result)
+        except FileNotFoundError as exc:
+            skipped += 1
+            print(f"[WARN] skipping {ticker}: {exc}")
+
+    passed = [r for r in results if r.passed]
+
+    def _score(res):
+        return res.signal_scores.get("unusual_volume_simple", 0.0)
+
+    passed = sorted(passed, key=_score, reverse=True)
+
+    print("")
+    print("Screen summary")
+    print(f"  Tickers considered: {len(tickers)}")
+    print(f"  Evaluated:          {len(results)}")
+    print(f"  Passed:             {len(passed)}")
+    print(f"  Skipped:            {skipped}")
+
+    if passed:
+        print("")
+        print("ticker,asof,score")
+        for row in passed:
+            print(f"{row.ticker},{row.asof},{_score(row):.4f}")
+
+    return 0
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -292,6 +360,8 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit(cmd_backfill(args))
     if args.command == "update":
         raise SystemExit(cmd_update(args))
+    if args.command == "screen":
+        raise SystemExit(cmd_screen(args))
 
     parser.print_help()
     raise SystemExit(1)
