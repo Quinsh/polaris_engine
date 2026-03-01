@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 from stock_filter.analytics.pipeline import run_screen_pipeline
+from stock_filter.analytics.types import ScreenResult
 from stock_filter.core.utils import (
     normalize_universe_name,
     today_yyyymmdd,
@@ -17,9 +18,15 @@ from stock_filter.datasource.loader import DataLoader
 from stock_filter.datasource.ohlcv_series_store import OhlcvSeriesStore
 from stock_filter.datasource.ohlcv_sync import OhlcvSync
 from stock_filter.datasource.pykrx_client import PykrxClient
+from stock_filter.features import FEATURE_REGISTRY
+from stock_filter.screening import build_feature_rules, build_signal_rules
+from stock_filter.signals import SIGNAL_REGISTRY
 from stock_filter.universe.krx_index import KrxIndexUniverseProvider
 from stock_filter.universe.service import UniverseService
 from stock_filter.universe.static_csv import StaticCsvUniverseProvider
+
+
+TICKER_MARKET_MAP: dict[str, str] = {}
 
 
 def print_banner() -> None:
@@ -52,6 +59,23 @@ def _parse_markets(markets_raw: str) -> tuple[bool, bool]:
     return want_kospi, want_kosdaq
 
 
+def _parse_space_separated(
+    text: str,
+    available: list[str],
+    kind: str,
+    default_all: bool = True,
+) -> list[str]:
+    """Parse space-separated input; validate against available; return subset or all if default_all."""
+    chosen = [x.strip() for x in (text or "").split() if x.strip()]
+    if not chosen:
+        return list(available) if default_all else []
+    valid = [c for c in chosen if c in available]
+    invalid = [c for c in chosen if c not in available]
+    if invalid:
+        print(f"[WARN] Unknown {kind}: {invalid}; using: {valid or available}")
+    return valid if valid else (list(available) if default_all else [])
+
+
 def _load_static_100_tickers(markets_raw: str) -> list[str]:
     """
     Loads tickers from static universe CSVs:
@@ -65,18 +89,27 @@ def _load_static_100_tickers(markets_raw: str) -> list[str]:
 
     if want_kospi:
         members = provider.get_members(universe="kospi100", asof="00000000", with_names=False)
-        tickers.extend([m.ticker for m in members])
+        for m in members:
+            tickers.append(m.ticker)
+            TICKER_MARKET_MAP.setdefault(m.ticker, "KOSPI")
 
     if want_kosdaq:
         members = provider.get_members(universe="kosdaq100", asof="00000000", with_names=False)
-        tickers.extend([m.ticker for m in members])
+        for m in members:
+            tickers.append(m.ticker)
+            TICKER_MARKET_MAP.setdefault(m.ticker, "KOSDAQ")
 
     return sorted(set(tickers))
 
 
+def _fmt_ticker_with_market(ticker: str) -> str:
+    market = TICKER_MARKET_MAP.get(ticker, "UNKNOWN")
+    return f"{ticker}({market})"
+
+
 def _progress_line(i: int, total: int, ok: int, skipped: int, failed: int, ticker: str, msg: str = "") -> None:
     # Single-line updating status
-    line = f"[{i:>4}/{total:<4}] ok={ok:<4} skip={skipped:<4} fail={failed:<4}  {ticker} {msg}"
+    line = f"[{i:>4}/{total:<4}] ok={ok:<4} skip={skipped:<4} fail={failed:<4}  {_fmt_ticker_with_market(ticker)} {msg}"
     print("\r" + line.ljust(90), end="", flush=True)
 
 
@@ -96,6 +129,9 @@ def run_fetch() -> None:
 
     members = svc.get_members(universe=universe, asof=end, with_names=False)
     tickers = [m.ticker for m in members]
+    market_label = "KOSPI" if universe == "kospi100" else "KOSDAQ"
+    for t in tickers:
+        TICKER_MARKET_MAP.setdefault(t, market_label)
 
     print()
     print(f"Universe resolved: {len(tickers)} tickers")
@@ -130,12 +166,14 @@ def run_universe() -> None:
     )
 
     members = svc.get_members(universe=universe, asof=date, with_names=True)
+    market_label = "KOSPI" if universe == "kospi100" else "KOSDAQ"
 
     print()
     print(f"{universe.upper()} members ({len(members)})")
     print("-" * 40)
     for m in members:
-        print(f"{m.ticker}  {m.name or ''}")
+        TICKER_MARKET_MAP.setdefault(m.ticker, market_label)
+        print(f"{_fmt_ticker_with_market(m.ticker)}  {m.name or ''}")
     print()
 
 
@@ -280,6 +318,29 @@ def run_update_series() -> None:
 
 def run_screen() -> None:
     print()
+    available_features = sorted(FEATURE_REGISTRY.keys())
+    available_signals = sorted(SIGNAL_REGISTRY.keys())
+    print("Available features:", " ".join(available_features))
+    print("Available signals: ", " ".join(available_signals))
+    print()
+
+    features_raw = prompt("Features (space-separated) [default=none]")
+    signals_raw = prompt("Signals (space-separated) [default=none]")
+    selected_features = _parse_space_separated(
+        features_raw, available_features, "features", default_all=False
+    )
+    selected_signals = _parse_space_separated(
+        signals_raw, available_signals, "signals", default_all=False
+    )
+
+    feature_rules = build_feature_rules(selected_features)
+    signal_rules = build_signal_rules(selected_signals)
+    if not feature_rules and not signal_rules:
+        print(
+            "[WARN] No default rules for selected items; all tickers will pass. "
+            "Add entries in screening/rule_defaults.py for filtering."
+        )
+
     ticker = prompt("Single ticker (e.g. 005930) [leave blank for markets]")
     markets_raw = ""
     if not ticker.strip():
@@ -303,16 +364,13 @@ def run_screen() -> None:
         return
 
     config = {
-        "features": ["returns_1d", "volume_sma_20", "price_above_sma_200"],
-        "signals": ["unusual_volume_simple"],
-        "rules": {
-            "feature_rules": [{"name": "price_above_sma_200", "op": ">=", "value": 1}],
-            "signal_rules": [{"name": "unusual_volume_simple", "min_score": 2.0}],
-        },
+        "features": selected_features,
+        "signals": selected_signals,
+        "rules": {"feature_rules": feature_rules, "signal_rules": signal_rules},
     }
 
     print()
-    print(f"Screening {len(tickers)} ticker(s)...")
+    print(f"Screening {len(tickers)} ticker(s) with features={selected_features} signals={selected_signals}...")
 
     results = []
     skipped = 0
@@ -322,10 +380,16 @@ def run_screen() -> None:
             results.append(result)
         except FileNotFoundError as exc:
             skipped += 1
-            print(f"[WARN] skipping {tkr}: {exc}")
+            print(f"[WARN] skipping {_fmt_ticker_with_market(tkr)}: {exc}")
 
     passed = [r for r in results if r.passed]
-    passed = sorted(passed, key=lambda r: r.signal_scores.get("unusual_volume_simple", 0.0), reverse=True)
+
+    def _sort_key(r: ScreenResult) -> float:
+        if selected_signals:
+            return r.signal_scores.get(selected_signals[0], 0.0)
+        return 0.0
+
+    passed = sorted(passed, key=_sort_key, reverse=True)
 
     print()
     print("Screen Summary")
@@ -336,10 +400,15 @@ def run_screen() -> None:
 
     if passed:
         print()
-        print("ticker,asof,score")
+        cols = ["ticker", "asof"] + selected_signals
+        print(",".join(cols))
         for row in passed:
-            score = row.signal_scores.get("unusual_volume_simple", 0.0)
-            print(f"{row.ticker},{row.asof},{score:.4f}")
+            label = _fmt_ticker_with_market(row.ticker)
+            if selected_signals:
+                scores = [str(row.signal_scores.get(s, "")) for s in selected_signals]
+                print(f"{label},{row.asof or ''}," + ",".join(scores))
+            else:
+                print(f"{label},{row.asof or ''}")
     print()
 
 
