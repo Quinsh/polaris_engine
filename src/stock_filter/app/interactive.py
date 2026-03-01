@@ -6,6 +6,7 @@ import sys
 import time
 from pathlib import Path
 
+from stock_filter.analytics.pipeline import run_screen_pipeline
 from stock_filter.core.utils import (
     normalize_universe_name,
     today_yyyymmdd,
@@ -277,6 +278,71 @@ def run_update_series() -> None:
     print()
 
 
+def run_screen() -> None:
+    print()
+    ticker = prompt("Single ticker (e.g. 005930) [leave blank for markets]")
+    markets_raw = ""
+    if not ticker.strip():
+        markets_raw = prompt("Which static lists? (kospi,kosdaq) [default=kospi,kosdaq]") or "kospi,kosdaq"
+    freq = prompt("Frequency (d/m/y) [default=d]") or "d"
+    out_dir = Path(prompt("Cache directory [default=data/cache]") or "data/cache")
+    limit_raw = prompt("Limit tickers (smoke test) [default=none]") or ""
+
+    limit = int(limit_raw) if limit_raw.strip() else None
+
+    if ticker.strip():
+        tickers = [ticker.strip()]
+    else:
+        tickers = _load_static_100_tickers(markets_raw)
+
+    if limit is not None:
+        tickers = tickers[: max(0, limit)]
+
+    if not tickers:
+        print("No tickers to screen.\n")
+        return
+
+    config = {
+        "features": ["returns_1d", "volume_sma_20", "price_above_sma_200"],
+        "signals": ["unusual_volume_simple"],
+        "rules": {
+            "feature_rules": [{"name": "price_above_sma_200", "op": ">=", "value": 1}],
+            "signal_rules": [{"name": "unusual_volume_simple", "min_score": 2.0}],
+        },
+    }
+
+    print()
+    print(f"Screening {len(tickers)} ticker(s)...")
+
+    results = []
+    skipped = 0
+    for tkr in tickers:
+        try:
+            result = run_screen_pipeline(ticker=tkr, freq=freq, root_dir=out_dir, config=config)
+            results.append(result)
+        except FileNotFoundError as exc:
+            skipped += 1
+            print(f"[WARN] skipping {tkr}: {exc}")
+
+    passed = [r for r in results if r.passed]
+    passed = sorted(passed, key=lambda r: r.signal_scores.get("unusual_volume_simple", 0.0), reverse=True)
+
+    print()
+    print("Screen Summary")
+    print(f"Considered: {len(tickers)}")
+    print(f"Evaluated:  {len(results)}")
+    print(f"Passed:     {len(passed)}")
+    print(f"Skipped:    {skipped}")
+
+    if passed:
+        print()
+        print("ticker,asof,score")
+        for row in passed:
+            score = row.signal_scores.get("unusual_volume_simple", 0.0)
+            print(f"{row.ticker},{row.asof},{score:.4f}")
+    print()
+
+
 def main() -> None:
     print_banner()
 
@@ -286,10 +352,11 @@ def main() -> None:
         print("2) Fetch OHLCV Data (window cache)")
         print("3) Backfill OHLCV Series (static kospi100/kosdaq100)")
         print("4) Update OHLCV Series to Today (static kospi100/kosdaq100)")
-        print("5) Exit")
+        print("5) Screen cached series")
+        print("6) Exit")
         print()
 
-        choice = input("Enter choice (1-5): ").strip()
+        choice = input("Enter choice (1-6): ").strip()
 
         try:
             if choice == "1":
@@ -301,6 +368,8 @@ def main() -> None:
             elif choice == "4":
                 run_update_series()
             elif choice == "5":
+                run_screen()
+            elif choice == "6":
                 print("Exiting.")
                 sys.exit(0)
             else:
