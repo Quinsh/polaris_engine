@@ -178,7 +178,7 @@ def rsi_mfi_smart_sell(df: pd.DataFrame) -> Signal | None:
     )
 
 
-def _mfi_divergence(df: pd.DataFrame) -> tuple[str, float, dict[str, float]] | None:
+def _mfi_divergence(df: pd.DataFrame) -> tuple[str, dict[str, float]] | None:
     required = ["close", "high", "low", "volume"]
     missing = [c for c in required if c not in df.columns]
     if missing:
@@ -283,36 +283,20 @@ def _mfi_divergence(df: pd.DataFrame) -> tuple[str, float, dict[str, float]] | N
     is_os = bool(k.iloc[i] < os or k.iloc[i - 1] < os)
 
     if divbear[i] and is_ob:
-        price_push = max(0.0, float(max_price[i - 1] - max_price[i - 2]))
-        price_push_pct = (price_push / max(abs(float(max_price[i - 2])), 1e-9)) * 100.0
-        mfi_fade = max(0.0, float(max_mfi[i] - mfi.iloc[i - 1]))
-        stoch_extreme = max(0.0, float(max(k.iloc[i], k.iloc[i - 1]) - ob))
-        score = price_push_pct + mfi_fade + stoch_extreme
         details = {
             "direction_sign": -1.0,
             "mfi": float(mfi.iloc[i]),
             "stoch_k": float(k.iloc[i]),
-            "price_push_pct": float(price_push_pct),
-            "mfi_fade": float(mfi_fade),
-            "stoch_extreme": float(stoch_extreme),
         }
-        return "bearish", float(score), details
+        return "bearish", details
 
     if divbull[i] and is_os:
-        price_push = max(0.0, float(min_price[i - 2] - min_price[i - 1]))
-        price_push_pct = (price_push / max(abs(float(min_price[i - 2])), 1e-9)) * 100.0
-        mfi_recovery = max(0.0, float(mfi.iloc[i - 1] - min_mfi[i]))
-        stoch_extreme = max(0.0, float(os - min(k.iloc[i], k.iloc[i - 1])))
-        score = price_push_pct + mfi_recovery + stoch_extreme
         details = {
             "direction_sign": 1.0,
             "mfi": float(mfi.iloc[i]),
             "stoch_k": float(k.iloc[i]),
-            "price_push_pct": float(price_push_pct),
-            "mfi_recovery": float(mfi_recovery),
-            "stoch_extreme": float(stoch_extreme),
         }
-        return "bullish", float(score), details
+        return "bullish", details
 
     return None
 
@@ -328,7 +312,8 @@ def mfi_divergence(df: pd.DataFrame) -> Signal | None:
     if out is None:
         return None
 
-    direction, score, details = out
+    direction, details = out
+    score = 1.0
     row = df.iloc[-1]
     asof = pd.Timestamp(row["date"]).strftime("%Y-%m-%d")
     ticker = str(row["ticker"])
@@ -338,4 +323,36 @@ def mfi_divergence(df: pd.DataFrame) -> Signal | None:
         asof=asof,
         score=float(score),
         details={"direction": direction, **details},
+    )
+
+
+@register_signal("mfi_bullish_divergence", required_features=[])
+def mfi_bullish_divergence(df: pd.DataFrame) -> Signal | None:
+    signal = mfi_divergence(df)
+    if signal is None:
+        return None
+    if signal.details.get("direction") != "bullish":
+        return None
+    return Signal(
+        name="mfi_bullish_divergence",
+        ticker=signal.ticker,
+        asof=signal.asof,
+        score=1.0,
+        details=signal.details,
+    )
+
+
+@register_signal("mfi_bearish_divergence", required_features=[])
+def mfi_bearish_divergence(df: pd.DataFrame) -> Signal | None:
+    signal = mfi_divergence(df)
+    if signal is None:
+        return None
+    if signal.details.get("direction") != "bearish":
+        return None
+    return Signal(
+        name="mfi_bearish_divergence",
+        ticker=signal.ticker,
+        asof=signal.asof,
+        score=1.0,
+        details=signal.details,
     )

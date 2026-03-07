@@ -54,11 +54,26 @@ def test_mfi_divergence_detects_bearish_and_bullish() -> None:
 
     assert bear_signal.details["direction"] == "bearish"
     assert bull_signal.details["direction"] == "bullish"
-    assert bear_signal.score > 0
-    assert bull_signal.score > 0
+    assert bear_signal.score == 1.0
+    assert bull_signal.score == 1.0
 
 
-def test_mfi_divergence_score_increases_with_stronger_bearish_push() -> None:
+def test_mfi_divergence_split_signals_match_direction() -> None:
+    bear_df = _find_divergence_case("bearish", seed=7)
+    bull_df = _find_divergence_case("bullish", seed=11)
+
+    bear_only = detect_signals(bear_df, ["mfi_bearish_divergence"])
+    bull_only = detect_signals(bull_df, ["mfi_bullish_divergence"])
+    wrong_bear = detect_signals(bear_df, ["mfi_bullish_divergence"])
+    wrong_bull = detect_signals(bull_df, ["mfi_bearish_divergence"])
+
+    assert bear_only and bear_only[0].name == "mfi_bearish_divergence"
+    assert bull_only and bull_only[0].name == "mfi_bullish_divergence"
+    assert not wrong_bear
+    assert not wrong_bull
+
+
+def test_mfi_divergence_score_is_binary_when_signal_exists() -> None:
     df = _find_divergence_case("bearish", seed=7)
     base_signal = detect_signals(df, ["mfi_divergence"])[0]
 
@@ -72,4 +87,4 @@ def test_mfi_divergence_score_increases_with_stronger_bearish_push() -> None:
     stronger_signal = detect_signals(stronger, ["mfi_divergence"])[0]
 
     assert stronger_signal.details["direction"] == "bearish"
-    assert stronger_signal.score > base_signal.score
+    assert stronger_signal.score == base_signal.score == 1.0
