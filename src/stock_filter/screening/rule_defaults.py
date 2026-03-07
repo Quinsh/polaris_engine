@@ -16,7 +16,8 @@ DEFAULT_SIGNAL_RULES: dict[str, dict] = {
     "support_test": {"min_score": 0.5},
     "4th_resistance_test": {"min_score": 0.5},
     "wave2": {"min_score": 0.5},
-    
+    "rsi_mfi_smart_buy": {"min_score": 5.0},
+    "rsi_mfi_smart_sell": {"min_score": 5.0},
 }
 
 
