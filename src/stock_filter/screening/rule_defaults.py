@@ -18,6 +18,7 @@ DEFAULT_SIGNAL_RULES: dict[str, dict] = {
     "wave2": {"min_score": 0.5},
     "rsi_mfi_smart_buy": {"min_score": 5.0},
     "rsi_mfi_smart_sell": {"min_score": 5.0},
+    "mfi_divergence": {"min_score": 5.0},
 }
 
 
