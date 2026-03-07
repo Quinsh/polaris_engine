@@ -1,7 +1,7 @@
 # Default rule thresholds for screening. Add an entry here when you add a new
 # feature or signal that should be used as a filter by default.
 
-# Feature rules: name -> { "op": ">=" | ">" | "<" | "<=" | "==", "value": number }
+# Feature rules: name -> { "o4th_resistance_test": ">=" | ">" | "<" | "<=" | "==", "value": number }
 DEFAULT_FEATURE_RULES: dict[str, dict] = {
     "price_above_sma_200": {"op": ">=", "value": 1},
 }
@@ -14,6 +14,9 @@ DEFAULT_SIGNAL_RULES: dict[str, dict] = {
     "double_bottom": {"min_score": 0.5},
     "bullish_pennant": {"min_score": 0.5},
     "support_test": {"min_score": 0.5},
+    "4th_resistance_test": {"min_score": 0.5},
+    "wave2": {"min_score": 0.5},
+    
 }
 
 
