@@ -76,6 +76,13 @@ def _parse_space_separated(
     return valid if valid else (list(available) if default_all else [])
 
 
+def average_signal_score(signal_scores: dict[str, float], selected_signals: list[str]) -> float:
+    if not selected_signals:
+        return 0.0
+    values = [float(signal_scores.get(name, 0.0)) for name in selected_signals]
+    return sum(values) / len(values)
+
+
 def _load_static_100_tickers(markets_raw: str) -> list[str]:
     """
     Loads tickers from static universe CSVs:
@@ -384,12 +391,11 @@ def run_screen() -> None:
 
     passed = [r for r in results if r.passed]
 
-    def _sort_key(r: ScreenResult) -> float:
-        if selected_signals:
-            return r.signal_scores.get(selected_signals[0], 0.0)
-        return 0.0
-
-    passed = sorted(passed, key=_sort_key, reverse=True)
+    passed = sorted(
+        passed,
+        key=lambda r: average_signal_score(r.signal_scores, selected_signals),
+        reverse=True,
+    )
 
     print()
     print("Screen Summary")
@@ -400,13 +406,17 @@ def run_screen() -> None:
 
     if passed:
         print()
-        cols = ["ticker", "asof"] + selected_signals
+        cols = ["ticker", "asof"]
+        if selected_signals:
+            cols.append("avg_score")
+            cols.extend(selected_signals)
         print(",".join(cols))
         for row in passed:
             label = _fmt_ticker_with_market(row.ticker)
             if selected_signals:
+                avg_score = average_signal_score(row.signal_scores, selected_signals)
                 scores = [str(row.signal_scores.get(s, "")) for s in selected_signals]
-                print(f"{label},{row.asof or ''}," + ",".join(scores))
+                print(f"{label},{row.asof or ''},{avg_score}," + ",".join(scores))
             else:
                 print(f"{label},{row.asof or ''}")
     print()
