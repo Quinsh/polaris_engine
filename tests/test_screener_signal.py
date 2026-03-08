@@ -93,3 +93,58 @@ def test_screener_feature_rule_for_price_above_green_avwap() -> None:
     assert pass_result.passed is True
     assert fail_result.passed is False
     assert any(r.startswith("feature_rule_failed:price_above_green_avwap") for r in fail_result.reasons)
+
+
+def test_screener_feature_rule_for_price_above_yearly_avwap() -> None:
+    dates = pd.date_range("2024-01-01", periods=6, freq="D")
+    close = [100.0, 102.0, 104.0, 106.0, 108.0, 110.0]
+    df = pd.DataFrame(
+        {
+            "ticker": ["005930"] * 6,
+            "date": dates,
+            "open": close,
+            "high": close,
+            "low": close,
+            "close": close,
+            "volume": [1000] * 6,
+        }
+    )
+
+    enriched = compute_features(df, ["price_above_yearly_avwap"])
+
+    pass_rules = {"feature_rules": [{"name": "price_above_yearly_avwap", "op": ">=", "value": 1}], "signal_rules": []}
+    fail_rules = {"feature_rules": [{"name": "price_above_yearly_avwap", "op": "==", "value": 0}], "signal_rules": []}
+
+    pass_result = Screener(pass_rules).evaluate(enriched, [])
+    fail_result = Screener(fail_rules).evaluate(enriched, [])
+
+    assert pass_result.passed is True
+    assert fail_result.passed is False
+    assert any(r.startswith("feature_rule_failed:price_above_yearly_avwap") for r in fail_result.reasons)
+
+
+
+def test_screener_feature_rule_for_doge_candle() -> None:
+    df = pd.DataFrame(
+        {
+            "ticker": ["005930", "005930"],
+            "date": pd.to_datetime(["2024-01-01", "2024-01-02"]),
+            "open": [100.0, 100.0],
+            "high": [110.0, 110.0],
+            "low": [90.0, 90.0],
+            "close": [101.0, 108.0],
+            "volume": [1000, 1000],
+        }
+    )
+
+    enriched = compute_features(df, ["doge_candle"])
+
+    pass_rules = {"feature_rules": [{"name": "doge_candle", "op": ">=", "value": 1}], "signal_rules": []}
+    fail_rules = {"feature_rules": [{"name": "doge_candle", "op": "==", "value": 0}], "signal_rules": []}
+
+    pass_result = Screener(pass_rules).evaluate(enriched.iloc[[0]], [])
+    fail_result = Screener(fail_rules).evaluate(enriched.iloc[[0]], [])
+
+    assert pass_result.passed is True
+    assert fail_result.passed is False
+    assert any(r.startswith("feature_rule_failed:doge_candle") for r in fail_result.reasons)

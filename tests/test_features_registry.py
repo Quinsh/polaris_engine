@@ -94,3 +94,77 @@ def test_green_avwap_direction_features() -> None:
     below = compute_features(falling_df, ["price_below_green_avwap"])
     assert "price_below_green_avwap" in below.columns
     assert below["price_below_green_avwap"].iloc[-1] == 1.0
+
+
+def test_yearly_avwap_and_direction_features() -> None:
+    dates = pd.date_range("2023-12-30", periods=6, freq="D")
+    close = [100.0, 102.0, 104.0, 106.0, 108.0, 110.0]
+    volume = [10, 10, 10, 10, 10, 10]
+
+    df = pd.DataFrame(
+        {
+            "ticker": ["005930"] * len(dates),
+            "date": dates,
+            "open": close,
+            "high": close,
+            "low": close,
+            "close": close,
+            "volume": volume,
+        }
+    )
+
+    out = compute_features(df, ["yearly_avwap", "price_above_yearly_avwap", "price_below_yearly_avwap"])
+
+    assert "yearly_avwap" in out.columns
+    assert out.loc[0, "yearly_avwap"] == 100.0
+    assert out.loc[1, "yearly_avwap"] == 101.0
+    # New year reset on 2024-01-01 -> first AVWAP equals that bar source (here close).
+    assert out.loc[2, "yearly_avwap"] == 104.0
+
+    assert out["price_above_yearly_avwap"].iloc[-1] == 1.0
+    assert out["price_below_yearly_avwap"].iloc[-1] == 0.0
+
+
+def test_price_below_yearly_avwap_feature() -> None:
+    dates = pd.date_range("2024-01-01", periods=5, freq="D")
+    close = [100.0, 110.0, 110.0, 110.0, 90.0]
+
+    df = pd.DataFrame(
+        {
+            "ticker": ["005930"] * len(dates),
+            "date": dates,
+            "open": close,
+            "high": close,
+            "low": close,
+            "close": close,
+            "volume": [1000] * len(dates),
+        }
+    )
+
+    out = compute_features(df, ["price_below_yearly_avwap"])
+
+    assert "price_below_yearly_avwap" in out.columns
+    assert out["price_below_yearly_avwap"].iloc[-1] == 1.0
+
+
+
+def test_doge_candle_feature() -> None:
+    df = pd.DataFrame(
+        {
+            "ticker": ["005930", "005930"],
+            "date": pd.to_datetime(["2024-01-01", "2024-01-02"]),
+            "open": [100.0, 100.0],
+            "high": [110.0, 110.0],
+            "low": [90.0, 90.0],
+            "close": [101.0, 108.0],
+            "volume": [1000, 1000],
+        }
+    )
+
+    out = compute_features(df, ["doge_candle"])
+
+    assert "doge_candle" in out.columns
+    # body=1, range=20 => 5% (doge/doji)
+    assert out["doge_candle"].iloc[0] == 1.0
+    # body=8, range=20 => 40% (not doge/doji)
+    assert out["doge_candle"].iloc[1] == 0.0
