@@ -7,7 +7,6 @@ import time
 from pathlib import Path
 
 from stock_filter.analytics.pipeline import run_screen_pipeline
-from stock_filter.analytics.types import ScreenResult
 from stock_filter.core.utils import (
     normalize_universe_name,
     today_yyyymmdd,
@@ -21,6 +20,7 @@ from stock_filter.datasource.pykrx_client import PykrxClient
 from stock_filter.features import FEATURE_REGISTRY
 from stock_filter.screening import build_feature_rules, build_signal_rules
 from stock_filter.signals import SIGNAL_REGISTRY
+from stock_filter.risk import PositionSizingInput, calculate_position_size
 from stock_filter.universe.krx_index import KrxIndexUniverseProvider
 from stock_filter.universe.service import UniverseService
 from stock_filter.universe.static_csv import StaticCsvUniverseProvider
@@ -422,6 +422,35 @@ def run_screen() -> None:
     print()
 
 
+
+def run_position_size() -> None:
+    print()
+    ticker = prompt("Ticker (e.g. 005930)")
+    account_size = float(prompt("Account size (KRW)") or "0")
+    risk_percent_raw = prompt("Risk percent per trade (e.g. 1 for 1%)") or "1"
+    entry_price = float(prompt("Entry price"))
+    stop_price = float(prompt("Stop price"))
+
+    risk_percent = float(risk_percent_raw) / 100.0
+    result = calculate_position_size(
+        PositionSizingInput(
+            ticker=ticker,
+            account_size=account_size,
+            risk_percent=risk_percent,
+            entry_price=entry_price,
+            stop_price=stop_price,
+        )
+    )
+
+    print()
+    print("Position Size Summary")
+    print(f"Ticker:          {result.ticker}")
+    print(f"Risk amount:     {result.risk_amount:,.0f}")
+    print(f"Risk/share:      {result.risk_per_share:,.2f}")
+    print(f"Quantity:        {result.quantity:,}")
+    print(f"Position value:  {result.position_value:,.0f}")
+    print()
+
 def main() -> None:
     print_banner()
 
@@ -432,10 +461,11 @@ def main() -> None:
         print("3) Backfill OHLCV Series (static kospi100/kosdaq100)")
         print("4) Update OHLCV Series to Today (static kospi100/kosdaq100)")
         print("5) Screen cached series")
-        print("6) Exit")
+        print("6) Calculate Position Size")
+        print("7) Exit")
         print()
 
-        choice = input("Enter choice (1-6): ").strip()
+        choice = input("Enter choice (1-7): ").strip()
 
         try:
             if choice == "1":
@@ -449,6 +479,8 @@ def main() -> None:
             elif choice == "5":
                 run_screen()
             elif choice == "6":
+                run_position_size()
+            elif choice == "7":
                 print("Exiting.")
                 sys.exit(0)
             else:
