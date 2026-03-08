@@ -142,6 +142,40 @@ def _green_avwap(df: pd.DataFrame) -> pd.Series:
     return pd.Series(lo_avwap, index=df.index, dtype=float)
 
 
+def _yearly_avwap(df: pd.DataFrame) -> pd.Series:
+    required = ["high", "low", "close", "volume"]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise ValueError(f"yearly_avwap requires columns: {missing}")
+
+    if "date" in df.columns:
+        date_series = pd.to_datetime(df["date"], errors="coerce")
+    elif isinstance(df.index, pd.DatetimeIndex):
+        date_series = pd.to_datetime(df.index, errors="coerce")
+    else:
+        raise ValueError("yearly_avwap requires a 'date' column or DatetimeIndex")
+
+    high = pd.to_numeric(df["high"], errors="coerce")
+    low = pd.to_numeric(df["low"], errors="coerce")
+    close = pd.to_numeric(df["close"], errors="coerce")
+    volume = pd.to_numeric(df["volume"], errors="coerce")
+
+    src = (high + low + close) / 3.0
+    pv = src * volume
+    year_bucket = date_series.dt.year
+
+    cum_pv = pv.groupby(year_bucket).cumsum()
+    cum_volume = volume.groupby(year_bucket).cumsum()
+
+    yearly_avwap = cum_pv / cum_volume
+    return yearly_avwap.where(cum_volume > 0)
+
+
+@register_feature("yearly_avwap")
+def yearly_avwap(df: pd.DataFrame) -> pd.Series:
+    return _yearly_avwap(df)
+
+
 @register_feature("price_above_green_avwap")
 def price_above_green_avwap(df: pd.DataFrame) -> pd.Series:
     if "close" not in df.columns:
@@ -160,3 +194,23 @@ def price_below_green_avwap(df: pd.DataFrame) -> pd.Series:
     green_avwap = _green_avwap(df)
     close = pd.to_numeric(df["close"], errors="coerce")
     return (close < green_avwap).astype(float)
+
+
+@register_feature("price_above_yearly_avwap")
+def price_above_yearly_avwap(df: pd.DataFrame) -> pd.Series:
+    if "close" not in df.columns:
+        raise ValueError("price_above_yearly_avwap requires 'close' column")
+
+    avwap = _yearly_avwap(df)
+    close = pd.to_numeric(df["close"], errors="coerce")
+    return (close > avwap).astype(float)
+
+
+@register_feature("price_below_yearly_avwap")
+def price_below_yearly_avwap(df: pd.DataFrame) -> pd.Series:
+    if "close" not in df.columns:
+        raise ValueError("price_below_yearly_avwap requires 'close' column")
+
+    avwap = _yearly_avwap(df)
+    close = pd.to_numeric(df["close"], errors="coerce")
+    return (close < avwap).astype(float)

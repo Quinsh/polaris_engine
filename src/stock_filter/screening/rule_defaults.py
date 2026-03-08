@@ -6,6 +6,8 @@ DEFAULT_FEATURE_RULES: dict[str, dict] = {
     "price_above_sma_200": {"op": ">=", "value": 1},
     "price_above_green_avwap": {"op": ">=", "value": 1},
     "price_below_green_avwap": {"op": ">=", "value": 1},
+    "price_above_yearly_avwap": {"op": ">=", "value": 1},
+    "price_below_yearly_avwap": {"op": ">=", "value": 1},
 }
 
 # Signal rules: name -> { "min_score": number }
