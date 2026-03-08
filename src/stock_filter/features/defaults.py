@@ -214,3 +214,22 @@ def price_below_yearly_avwap(df: pd.DataFrame) -> pd.Series:
     avwap = _yearly_avwap(df)
     close = pd.to_numeric(df["close"], errors="coerce")
     return (close < avwap).astype(float)
+
+
+@register_feature("doge_candle")
+def doge_candle(df: pd.DataFrame) -> pd.Series:
+    required = ["open", "high", "low", "close"]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise ValueError(f"doge_candle requires columns: {missing}")
+
+    open_ = pd.to_numeric(df["open"], errors="coerce")
+    high = pd.to_numeric(df["high"], errors="coerce")
+    low = pd.to_numeric(df["low"], errors="coerce")
+    close = pd.to_numeric(df["close"], errors="coerce")
+
+    candle_range = high - low
+    body = (close - open_).abs()
+
+    # Doge/Doji-style candle: very small body relative to full range.
+    return ((candle_range > 0) & (body <= (candle_range * 0.1))).astype(float)

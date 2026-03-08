@@ -145,3 +145,26 @@ def test_price_below_yearly_avwap_feature() -> None:
 
     assert "price_below_yearly_avwap" in out.columns
     assert out["price_below_yearly_avwap"].iloc[-1] == 1.0
+
+
+
+def test_doge_candle_feature() -> None:
+    df = pd.DataFrame(
+        {
+            "ticker": ["005930", "005930"],
+            "date": pd.to_datetime(["2024-01-01", "2024-01-02"]),
+            "open": [100.0, 100.0],
+            "high": [110.0, 110.0],
+            "low": [90.0, 90.0],
+            "close": [101.0, 108.0],
+            "volume": [1000, 1000],
+        }
+    )
+
+    out = compute_features(df, ["doge_candle"])
+
+    assert "doge_candle" in out.columns
+    # body=1, range=20 => 5% (doge/doji)
+    assert out["doge_candle"].iloc[0] == 1.0
+    # body=8, range=20 => 40% (not doge/doji)
+    assert out["doge_candle"].iloc[1] == 0.0
