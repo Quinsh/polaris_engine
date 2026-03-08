@@ -64,3 +64,32 @@ def test_screener_feature_rule_for_price_above_sma_200() -> None:
     assert pass_result.passed is True
     assert fail_result.passed is False
     assert any(r.startswith("feature_rule_failed:price_above_sma_200") for r in fail_result.reasons)
+
+
+
+def test_screener_feature_rule_for_price_above_green_avwap() -> None:
+    dates = pd.date_range("2023-01-01", periods=220, freq="D")
+    close = [100.0 + i * 0.2 for i in range(220)]
+    df = pd.DataFrame(
+        {
+            "ticker": ["005930"] * 220,
+            "date": dates,
+            "open": close,
+            "high": [c + 1.0 for c in close],
+            "low": [c - 1.5 for c in close],
+            "close": close,
+            "volume": [1000] * 220,
+        }
+    )
+
+    enriched = compute_features(df, ["price_above_green_avwap"])
+
+    pass_rules = {"feature_rules": [{"name": "price_above_green_avwap", "op": ">=", "value": 1}], "signal_rules": []}
+    fail_rules = {"feature_rules": [{"name": "price_above_green_avwap", "op": "==", "value": 0}], "signal_rules": []}
+
+    pass_result = Screener(pass_rules).evaluate(enriched, [])
+    fail_result = Screener(fail_rules).evaluate(enriched, [])
+
+    assert pass_result.passed is True
+    assert fail_result.passed is False
+    assert any(r.startswith("feature_rule_failed:price_above_green_avwap") for r in fail_result.reasons)

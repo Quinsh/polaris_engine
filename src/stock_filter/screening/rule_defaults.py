@@ -4,6 +4,8 @@
 # Feature rules: name -> { "o4th_resistance_test": ">=" | ">" | "<" | "<=" | "==", "value": number }
 DEFAULT_FEATURE_RULES: dict[str, dict] = {
     "price_above_sma_200": {"op": ">=", "value": 1},
+    "price_above_green_avwap": {"op": ">=", "value": 1},
+    "price_below_green_avwap": {"op": ">=", "value": 1},
 }
 
 # Signal rules: name -> { "min_score": number }
@@ -18,7 +20,9 @@ DEFAULT_SIGNAL_RULES: dict[str, dict] = {
     "wave2": {"min_score": 0.5},
     "rsi_mfi_smart_buy": {"min_score": 5.0},
     "rsi_mfi_smart_sell": {"min_score": 5.0},
-    "mfi_divergence": {"min_score": 5.0},
+    "mfi_divergence": {"min_score": 1.0},
+    "mfi_bullish_divergence": {"min_score": 1.0},
+    "mfi_bearish_divergence": {"min_score": 1.0},
 }
 
 
