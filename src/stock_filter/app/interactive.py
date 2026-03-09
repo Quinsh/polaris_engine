@@ -28,6 +28,10 @@ from stock_filter.universe.static_csv import StaticCsvUniverseProvider
 
 
 TICKER_MARKET_MAP: dict[str, str] = {}
+MARKET_INDEX_ETF = {
+    "KOSPI": "226490",
+    "KOSDAQ": "229200",
+}
 
 
 def print_banner() -> None:
@@ -100,12 +104,18 @@ def _load_static_100_tickers(markets_raw: str) -> list[str]:
         for m in members:
             tickers.append(m.ticker)
             TICKER_MARKET_MAP.setdefault(m.ticker, "KOSPI")
+        kospi_etf = MARKET_INDEX_ETF["KOSPI"]
+        tickers.append(kospi_etf)
+        TICKER_MARKET_MAP.setdefault(kospi_etf, "KOSPI")
 
     if want_kosdaq:
         members = provider.get_members(universe="kosdaq100", asof="00000000", with_names=False)
         for m in members:
             tickers.append(m.ticker)
             TICKER_MARKET_MAP.setdefault(m.ticker, "KOSDAQ")
+        kosdaq_etf = MARKET_INDEX_ETF["KOSDAQ"]
+        tickers.append(kosdaq_etf)
+        TICKER_MARKET_MAP.setdefault(kosdaq_etf, "KOSDAQ")
 
     return sorted(set(tickers))
 
@@ -462,6 +472,14 @@ def run_position_size() -> None:
         "risk_percent": risk_percent,
         "entry_price": entry_price,
     }
+
+    explain_raw = (prompt("Show colorful step-by-step derivation? (Y/n)") or "y").strip().lower()
+    explain_steps = explain_raw not in {"n", "no"}
+    delay_seconds = float(prompt("Delay per derivation step in seconds [default=0.35]") or "0.35")
+    if "explain_steps" in supported_fields:
+        params["explain_steps"] = explain_steps
+    if "step_delay_seconds" in supported_fields:
+        params["step_delay_seconds"] = delay_seconds
 
     if "side" in supported_fields:
         params["side"] = side

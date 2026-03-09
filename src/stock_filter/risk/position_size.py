@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import math
+import time
 from typing import Literal
 
 import numpy as np
@@ -145,6 +146,10 @@ class PositionSizingInput:
     slippage_per_share: float = 0.0
     fixed_fees: float = 0.0
 
+    # Interactive explanation output controls
+    explain_steps: bool = False
+    step_delay_seconds: float = 0.0
+
 
 @dataclass(frozen=True)
 class PositionSizingResult:
@@ -173,6 +178,24 @@ class PositionSizingResult:
     def actual_risk(self) -> float:
         return self.actual_risk_amount
 
+
+
+
+class _Color:
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    CYAN = "\033[36m"
+    GREEN = "\033[32m"
+    YELLOW = "\033[33m"
+
+
+def _emit_step(enabled: bool, title: str, detail: str, *, delay_seconds: float = 0.0) -> None:
+    if not enabled:
+        return
+    print(f"{_Color.BOLD}{_Color.CYAN}[Position Sizing] {title}{_Color.RESET}")
+    print(f"{_Color.GREEN}{detail}{_Color.RESET}")
+    if delay_seconds > 0:
+        time.sleep(delay_seconds)
 
 def _round_amount(value: float, ndigits: int = 2) -> float:
     return round(float(value), ndigits)
@@ -380,6 +403,7 @@ def calculate_position_size(params: PositionSizingInput) -> PositionSizingResult
     _validate_positive(params.commission_per_share, field_name="commission_per_share", allow_zero=True)
     _validate_positive(params.slippage_per_share, field_name="slippage_per_share", allow_zero=True)
     _validate_positive(params.fixed_fees, field_name="fixed_fees", allow_zero=True)
+    _validate_positive(params.step_delay_seconds, field_name="step_delay_seconds", allow_zero=True)
 
     if params.side not in {"long", "short"}:
         raise ValueError("side must be 'long' or 'short'")
@@ -398,8 +422,21 @@ def calculate_position_size(params: PositionSizingInput) -> PositionSizingResult
     if params.available_capital is not None:
         _validate_positive(params.available_capital, field_name="available_capital", allow_zero=True)
 
+    explain = bool(params.explain_steps)
+    delay = float(params.step_delay_seconds)
+
     method = _resolve_sizing_method(params)
     stop_price, stop_distance, atr_value, stop_notes = _determine_stop_and_risk(params, method)
+
+    _emit_step(
+        explain,
+        "Step 1: Stop derivation",
+        (
+            f"Method={method} | entry={params.entry_price:,.4f} | stop={stop_price:,.4f} | "
+            f"stop_distance=|entry-stop|={stop_distance:,.4f}"
+        ),
+        delay_seconds=delay,
+    )
 
     # Treat the friction inputs as per-side costs and convert to a conservative
     # round-trip per-share risk buffer.
@@ -408,6 +445,17 @@ def calculate_position_size(params: PositionSizingInput) -> PositionSizingResult
     if risk_per_share <= 0:
         raise ValueError("risk_per_share must be > 0")
 
+    _emit_step(
+        explain,
+        "Step 2: Per-share risk",
+        (
+            f"friction=2*(commission+slippage)=2*({params.commission_per_share:,.4f}+{params.slippage_per_share:,.4f})="
+            f"{per_share_friction:,.4f}; risk_per_share=stop_distance+friction={stop_distance:,.4f}+{per_share_friction:,.4f}="
+            f"{risk_per_share:,.4f}"
+        ),
+        delay_seconds=delay,
+    )
+
     risk_amount = params.account_size * params.risk_percent
     risk_budget_after_fees = max(risk_amount - params.fixed_fees, 0.0)
 
@@ -415,6 +463,17 @@ def calculate_position_size(params: PositionSizingInput) -> PositionSizingResult
     if risk_budget_after_fees > 0:
         raw_quantity_by_risk = math.floor(risk_budget_after_fees / risk_per_share)
     quantity_by_risk = _floor_to_lot(raw_quantity_by_risk, params.lot_size)
+
+    _emit_step(
+        explain,
+        "Step 3: Risk budget to quantity",
+        (
+            f"risk_amount=account_size*risk_percent={params.account_size:,.2f}*{params.risk_percent:.4f}={risk_amount:,.2f}; "
+            f"after_fees=max(risk_amount-fixed_fees,0)=max({risk_amount:,.2f}-{params.fixed_fees:,.2f},0)={risk_budget_after_fees:,.2f}; "
+            f"raw_qty_by_risk=floor(after_fees/risk_per_share)={raw_quantity_by_risk}; lot-adjusted={quantity_by_risk}"
+        ),
+        delay_seconds=delay,
+    )
 
     available_capital = (
         params.available_capital
@@ -428,6 +487,17 @@ def calculate_position_size(params: PositionSizingInput) -> PositionSizingResult
 
     raw_quantity_by_capital = math.floor(max_position_value / params.entry_price) if max_position_value > 0 else 0
     quantity_by_capital = _floor_to_lot(raw_quantity_by_capital, params.lot_size)
+
+    _emit_step(
+        explain,
+        "Step 4: Capital cap to quantity",
+        (
+            f"available_capital={(params.available_capital if params.available_capital is not None else params.account_size * params.max_leverage):,.2f}; "
+            f"max_position_value={max_position_value:,.2f}; raw_qty_by_capital=floor(max_position_value/entry)={raw_quantity_by_capital}; "
+            f"lot-adjusted={quantity_by_capital}"
+        ),
+        delay_seconds=delay,
+    )
 
     quantity = min(quantity_by_risk, quantity_by_capital)
     notes = list(stop_notes)
@@ -457,6 +527,16 @@ def calculate_position_size(params: PositionSizingInput) -> PositionSizingResult
         quantity_by_risk=quantity_by_risk,
         quantity_by_capital=quantity_by_capital,
         minimum_quantity=params.minimum_quantity,
+    )
+
+    _emit_step(
+        explain,
+        "Step 5: Final decision",
+        (
+            f"quantity=min(qty_by_risk, qty_by_capital)={quantity}; position_value=quantity*entry={position_value:,.2f}; "
+            f"actual_risk=quantity*risk_per_share+fixed_fees={actual_risk_amount:,.2f}; binding={binding_constraint}"
+        ),
+        delay_seconds=delay,
     )
 
     return PositionSizingResult(
