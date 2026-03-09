@@ -21,6 +21,7 @@ from stock_filter.features import FEATURE_REGISTRY
 from stock_filter.screening import build_feature_rules, build_signal_rules
 from stock_filter.signals import SIGNAL_REGISTRY
 from stock_filter.risk import PositionSizingInput, calculate_position_size
+from stock_filter.storage import load_series
 from stock_filter.universe.krx_index import KrxIndexUniverseProvider
 from stock_filter.universe.service import UniverseService
 from stock_filter.universe.static_csv import StaticCsvUniverseProvider
@@ -425,30 +426,154 @@ def run_screen() -> None:
 
 def run_position_size() -> None:
     print()
+
+    supported_fields = set(getattr(PositionSizingInput, "__dataclass_fields__", {}).keys())
+
+    def _optional_float(raw: str) -> float | None:
+        value = (raw or "").strip()
+        return float(value) if value else None
+
     ticker = prompt("Ticker (e.g. 005930)")
     account_size = float(prompt("Account size (KRW)") or "0")
-    risk_percent_raw = prompt("Risk percent per trade (e.g. 1 for 1%)") or "1"
+    risk_percent = float(prompt("Risk percent per trade (e.g. 1 for 1%)") or "1") / 100.0
     entry_price = float(prompt("Entry price"))
-    stop_price = float(prompt("Stop price"))
 
-    risk_percent = float(risk_percent_raw) / 100.0
-    result = calculate_position_size(
-        PositionSizingInput(
-            ticker=ticker,
-            account_size=account_size,
-            risk_percent=risk_percent,
-            entry_price=entry_price,
-            stop_price=stop_price,
+    side_raw = (prompt("Side (long/short) [default=long]") or "long").strip().lower()
+    if side_raw in {"l", "long"}:
+        side = "long"
+    elif side_raw in {"s", "short"}:
+        side = "short"
+    else:
+        raise ValueError("side must be 'long' or 'short'")
+
+    mode_raw = (prompt("Mode: fixed_stop / percent_stop / atr [default=atr]") or "atr").strip().lower()
+    if mode_raw in {"fixed", "fixed stop", "fixed_stop"}:
+        mode = "fixed_stop"
+    elif mode_raw in {"percent", "percent stop", "percent_stop", "pct", "%"}:
+        mode = "percent_stop"
+    elif mode_raw in {"atr", "a"}:
+        mode = "atr"
+    else:
+        raise ValueError("mode must be fixed_stop, percent_stop, or atr")
+
+    params: dict[str, object] = {
+        "ticker": ticker,
+        "account_size": account_size,
+        "risk_percent": risk_percent,
+        "entry_price": entry_price,
+    }
+
+    if "side" in supported_fields:
+        params["side"] = side
+    if "sizing_method" in supported_fields:
+        params["sizing_method"] = mode
+
+    advanced_raw = (prompt("Use advanced controls? (y/N)") or "n").strip().lower()
+    use_advanced = advanced_raw in {"y", "yes"}
+
+    if use_advanced:
+        available_capital = _optional_float(
+            prompt("Available capital / buying power (KRW) [blank=account_size × leverage]")
         )
-    )
+        max_position_percent_raw = prompt(
+            "Max position as % of account [blank=no extra cap]"
+        )
+        max_leverage = float(prompt("Max leverage [default=1]") or "1")
+        lot_size = int(prompt("Lot size [default=1]") or "1")
+        minimum_quantity = int(prompt("Minimum quantity [default=0]") or "0")
+        commission_per_share = float(prompt("Commission per share [default=0]") or "0")
+        slippage_per_share = float(prompt("Slippage per share [default=0]") or "0")
+        fixed_fees = float(prompt("Fixed fees per trade [default=0]") or "0")
+
+        if "available_capital" in supported_fields and available_capital is not None:
+            params["available_capital"] = available_capital
+        if "max_position_percent" in supported_fields and max_position_percent_raw.strip():
+            params["max_position_percent"] = float(max_position_percent_raw) / 100.0
+        if "max_leverage" in supported_fields:
+            params["max_leverage"] = max_leverage
+        if "lot_size" in supported_fields:
+            params["lot_size"] = lot_size
+        if "minimum_quantity" in supported_fields:
+            params["minimum_quantity"] = minimum_quantity
+        if "commission_per_share" in supported_fields:
+            params["commission_per_share"] = commission_per_share
+        if "slippage_per_share" in supported_fields:
+            params["slippage_per_share"] = slippage_per_share
+        if "fixed_fees" in supported_fields:
+            params["fixed_fees"] = fixed_fees
+
+    if mode == "fixed_stop":
+        stop_price = float(prompt("Stop price"))
+        params["stop_price"] = stop_price
+
+    elif mode == "percent_stop":
+        stop_percent = float(prompt("Stop percent (e.g. 5 for 5%)") or "0") / 100.0
+        if "stop_percent" in supported_fields:
+            params["stop_percent"] = stop_percent
+        else:
+            stop_distance = entry_price * stop_percent
+            stop_price = entry_price - stop_distance if side == "long" else entry_price + stop_distance
+            params["stop_price"] = stop_price
+
+    else:
+        out_dir = Path(prompt("Cache directory [default=data/cache]") or "data/cache")
+        freq = prompt("Frequency (d/m/y) [default=d]") or "d"
+        atr_period = int(prompt("ATR period [default=14]") or "14")
+        atr_multiplier = float(prompt("ATR multiplier [default=2]") or "2")
+        atr_method = (prompt("ATR method (wilder/sma) [default=wilder]") or "wilder").strip().lower()
+
+        try:
+            df = load_series(ticker=ticker, freq=freq, root_dir=out_dir)
+        except FileNotFoundError as exc:
+            print(f"\n[ERROR] {exc}")
+            print("Backfill OHLCV series first (option 3 or 4).\n")
+            return
+
+        params["ohlcv"] = df
+        if "atr_period" in supported_fields:
+            params["atr_period"] = atr_period
+        if "atr_multiplier" in supported_fields:
+            params["atr_multiplier"] = atr_multiplier
+        if "atr_method" in supported_fields:
+            params["atr_method"] = atr_method
+
+    result = calculate_position_size(PositionSizingInput(**params))
 
     print()
     print("Position Size Summary")
-    print(f"Ticker:          {result.ticker}")
-    print(f"Risk amount:     {result.risk_amount:,.0f}")
-    print(f"Risk/share:      {result.risk_per_share:,.2f}")
-    print(f"Quantity:        {result.quantity:,}")
-    print(f"Position value:  {result.position_value:,.0f}")
+    print(f"Ticker:               {getattr(result, 'ticker', ticker)}")
+    if hasattr(result, "side"):
+        print(f"Side:                 {result.side}")
+    print(f"Method:               {result.method}")
+    if hasattr(result, "entry_price"):
+        print(f"Entry price:          {result.entry_price:,.2f}")
+    if hasattr(result, "stop_price"):
+        print(f"Stop price:           {result.stop_price:,.2f}")
+    if hasattr(result, "stop_distance"):
+        print(f"Stop distance:        {result.stop_distance:,.2f}")
+    if getattr(result, "atr_value", None) is not None:
+        print(f"ATR:                  {result.atr_value:,.4f}")
+    print(f"Risk amount:          {result.risk_amount:,.2f}")
+    print(f"Risk/share:           {result.risk_per_share:,.4f}")
+    print(f"Quantity:             {result.quantity:,}")
+    print(f"Position value:       {result.position_value:,.2f}")
+    if hasattr(result, "quantity_by_risk"):
+        print(f"Qty allowed by risk:  {result.quantity_by_risk:,}")
+    if hasattr(result, "quantity_by_capital"):
+        print(f"Qty allowed by cap:   {result.quantity_by_capital:,}")
+    if hasattr(result, "max_position_value"):
+        print(f"Max position value:   {result.max_position_value:,.2f}")
+    if hasattr(result, "actual_risk_amount"):
+        print(f"Actual risk amount:   {result.actual_risk_amount:,.2f}")
+    if hasattr(result, "actual_risk_percent"):
+        print(f"Actual risk %:        {result.actual_risk_percent * 100:.3f}%")
+    if hasattr(result, "binding_constraint"):
+        print(f"Binding constraint:   {result.binding_constraint}")
+    notes = getattr(result, "notes", ())
+    if notes:
+        print("Notes:")
+        for note in notes:
+            print(f"  - {note}")
     print()
 
 def main() -> None:
